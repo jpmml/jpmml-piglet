@@ -73,6 +73,8 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 		} catch(PigException pe){
 			throw pe;
 		} catch(PMMLException pe){
+			super.log.error("Failed to evaluate tuple", pe);
+
 			return null;
 		}
 	}
@@ -101,10 +103,14 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 		File file;
 
 		if(this.pmmlFile.exists()){
+			super.log.info("Loading local PMML file");
+
 			file = this.pmmlFile;
 		} else
 
 		{
+			super.log.info("Loading distributed cache PMML file");
+
 			file = new File("./" + this.pmmlFile.getName());
 		}
 
