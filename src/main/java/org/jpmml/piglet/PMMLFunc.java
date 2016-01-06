@@ -22,36 +22,23 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import javax.xml.bind.JAXBException;
 import javax.xml.transform.Source;
 
+import com.google.common.base.Function;
 import org.apache.pig.EvalFunc;
 import org.apache.pig.PigException;
-import org.apache.pig.backend.executionengine.ExecException;
-import org.apache.pig.data.DataType;
 import org.apache.pig.data.Tuple;
-import org.apache.pig.data.TupleFactory;
-import org.apache.pig.impl.logicalLayer.FrontendException;
 import org.apache.pig.impl.logicalLayer.schema.Schema;
-import org.apache.pig.impl.logicalLayer.schema.Schema.FieldSchema;
-import org.dmg.pmml.DataField;
 import org.dmg.pmml.FieldName;
-import org.dmg.pmml.OutputField;
 import org.dmg.pmml.PMML;
 import org.jpmml.evaluator.Evaluator;
-import org.jpmml.evaluator.EvaluatorUtil;
-import org.jpmml.evaluator.FieldValue;
 import org.jpmml.evaluator.ModelEvaluator;
 import org.jpmml.evaluator.ModelEvaluatorFactory;
-import org.jpmml.evaluator.OutputUtil;
 import org.jpmml.evaluator.PMMLException;
-import org.jpmml.evaluator.TypeAnalysisException;
 import org.jpmml.model.ImportFilter;
 import org.jpmml.model.JAXBUtil;
 import org.xml.sax.InputSource;
@@ -63,7 +50,7 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 
 	private Evaluator evaluator = null;
 
-	private Map<FieldName, Integer> activeFieldIndices = null;
+	private Function<FieldName, Integer> activeFieldMapper = null;
 
 
 	public PMMLFunc(String pmmlPath){
@@ -76,88 +63,33 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 
 	@Override
 	public Tuple exec(Tuple input) throws PigException {
-		Evaluator evaluator = ensureEvaluator();
+
+		if(this.evaluator == null){
+			initialize(getInputSchema());
+		}
 
 		try {
-			return evaluate(evaluator, input);
+			return EvaluatorUtil.exec(this.evaluator, this.activeFieldMapper, input);
+		} catch(PigException pe){
+			throw pe;
 		} catch(PMMLException pe){
 			return null;
 		}
 	}
 
-	private Tuple evaluate(Evaluator evaluator, Tuple input) throws PigException {
-		Map<FieldName, FieldValue> arguments = new LinkedHashMap<>();
-
-		List<FieldName> activeFields = evaluator.getActiveFields();
-		for(FieldName activeField : activeFields){
-			Integer activeFieldIndex = this.activeFieldIndices.get(activeField);
-			if(activeFieldIndex == null){
-				throw new ExecException();
-			}
-
-			FieldValue activeValue = EvaluatorUtil.prepare(evaluator, activeField, input.get(activeFieldIndex));
-
-			arguments.put(activeField, activeValue);
-		}
-
-		Map<FieldName, ?> result = evaluator.evaluate(arguments);
-
-		List<Object> resultValues = new ArrayList<>();
-
-		List<FieldName> targetFields = evaluator.getTargetFields();
-		for(FieldName targetField : targetFields){
-			resultValues.add(EvaluatorUtil.decode(result.get(targetField)));
-		}
-
-		List<FieldName> outputFields = evaluator.getOutputFields();
-		for(FieldName outputField : outputFields){
-			resultValues.add(result.get(outputField));
-		}
-
-		return PMMLFunc.tupleFactory.newTuple(resultValues);
-	}
-
 	@Override
 	public Schema outputSchema(Schema inputSchema){
-		Evaluator evaluator = ensureEvaluator(inputSchema);
 
-		List<Schema.FieldSchema> tupleFieldSchemas = new ArrayList<>();
+		if(this.evaluator == null){
 
-		List<FieldName> targetFields = evaluator.getTargetFields();
-		for(FieldName targetField : targetFields){
-			DataField dataField = evaluator.getDataField(targetField);
-
-			org.dmg.pmml.DataType dataType = dataField.getDataType();
-
-			tupleFieldSchemas.add(new Schema.FieldSchema(targetField.getValue(), DataTypeUtil.formatDataType(dataType)));
-		}
-
-		List<FieldName> outputFields = evaluator.getOutputFields();
-		for(FieldName outputField : outputFields){
-			OutputField output = evaluator.getOutputField(outputField);
-
-			org.dmg.pmml.DataType dataType = output.getDataType();
-			if(dataType == null){
-
-				try {
-					dataType = OutputUtil.getDataType(output, (ModelEvaluator<?>)evaluator);
-				} catch(TypeAnalysisException tae){
-					dataType = org.dmg.pmml.DataType.STRING;
-				}
+			try {
+				initialize(inputSchema);
+			} catch(PigException pe){
+				throw new RuntimeException(pe);
 			}
-
-			tupleFieldSchemas.add(new Schema.FieldSchema(outputField.getValue(), DataTypeUtil.formatDataType(dataType)));
 		}
 
-		FieldSchema tupleSchema;
-
-		try {
-			tupleSchema = new FieldSchema(PMMLFunc.class.getSimpleName(), new Schema(tupleFieldSchemas), DataType.TUPLE);
-		} catch(FrontendException fe){
-			throw new RuntimeException(fe);
-		}
-
-		return new Schema(tupleSchema);
+		return EvaluatorUtil.outputSchema(this.evaluator, inputSchema);
 	}
 
 	@Override
@@ -165,95 +97,34 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 		return Collections.singletonList(this.pmmlFile.getAbsolutePath());
 	}
 
-	private Evaluator ensureEvaluator(){
+	private void initialize(Schema inputSchema) throws PigException {
+		File file;
 
-		if(this.evaluator == null){
+		if(this.pmmlFile.exists()){
+			file = this.pmmlFile;
+		} else
 
-			try {
-				initialize(getInputSchema());
-			} catch(Exception e){
-				throw new RuntimeException(e);
-			}
+		{
+			file = new File("./" + this.pmmlFile.getName());
 		}
 
-		return this.evaluator;
-	}
-
-	private Evaluator ensureEvaluator(Schema inputSchema){
-
-		if(this.evaluator == null){
-
-			try {
-				initialize(inputSchema);
-			} catch(Exception e){
-				throw new RuntimeException(e);
-			}
-		}
-
-		return this.evaluator;
-	}
-
-	private void initialize(Schema schema) throws JAXBException, SAXException, IOException {
 		PMML pmml;
 
-		try(InputStream is = new FileInputStream(resolvePMMLFile())){
+		try(InputStream is = new FileInputStream(file)){
 			Source source = ImportFilter.apply(new InputSource(is));
 
 			pmml = JAXBUtil.unmarshalPMML(source);
+		} catch(JAXBException | SAXException | IOException e){
+			throw new RuntimeException(e);
 		}
 
 		ModelEvaluatorFactory modelEvaluatorFactory = ModelEvaluatorFactory.newInstance();
 
 		ModelEvaluator<?> evaluator = modelEvaluatorFactory.newModelManager(pmml);
-
-		Map<String, Integer> aliasIndices = new LinkedHashMap<>();
-
-		List<Schema.FieldSchema> fieldSchemas = schema.getFields();
-		for(int i = 0; i < fieldSchemas.size(); i++){
-			Schema.FieldSchema fieldSchema = fieldSchemas.get(i);
-
-			aliasIndices.put((fieldSchema.alias).toLowerCase(), Integer.valueOf(i));
-		}
-
-		Map<FieldName, Integer> activeFieldIndices = new LinkedHashMap<>();
-
-		List<FieldName> activeFields = evaluator.getActiveFields();
-		for(FieldName activeField : activeFields){
-			DataField dataField = evaluator.getDataField(activeField);
-
-			org.dmg.pmml.DataType dataType = dataField.getDataType();
-
-			Integer aliasIndex = aliasIndices.get((activeField.getValue()).toLowerCase());
-			if(aliasIndex == null){
-				throw new IllegalArgumentException("Field " + activeField + " not defined");
-			}
-
-			FieldSchema fieldSchema = fieldSchemas.get(aliasIndex);
-
-			org.dmg.pmml.DataType fieldDataType = DataTypeUtil.parseDataType(fieldSchema.type);
-
-			if(!DataTypeUtil.isCompatible(dataType, fieldDataType)){
-				throw new IllegalArgumentException("Field " + activeField + " does not support " + fieldDataType + " data. Must be " + dataType + " data");
-			}
-
-			activeFieldIndices.put(activeField, aliasIndex);
-		}
+		evaluator.verify();
 
 		this.evaluator = evaluator;
 
-		this.activeFieldIndices = activeFieldIndices;
+		this.activeFieldMapper = EvaluatorUtil.inputSchemaMapper(evaluator, inputSchema);
 	}
-
-	private File resolvePMMLFile(){
-
-		// Local file
-		if(this.pmmlFile.exists()){
-			return this.pmmlFile;
-		}
-
-		// Distributed cache file
-		return new File(this.pmmlFile.getName());
-	}
-
-	private static final TupleFactory tupleFactory = TupleFactory.getInstance();
 }
