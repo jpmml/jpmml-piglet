@@ -23,28 +23,28 @@ Add the uber-JAR file to Apache Pig classpath:
 REGISTER target/jpmml-piglet-distributable-1.0-SNAPSHOT.jar;
 ```
 
-The following example scores the `src/etc/Iris.csv` CSV file with the `src/etc/DecisionTreeIris.pmml` PMML file.
+The following example scores the `src/etc/Iris.csv` CSV file with the `src/etc/RandomForestIris.pmml` PMML file.
 
 Importing data from the CSV file:
 ```
-iris_input = LOAD 'src/etc/Iris.csv' USING PigStorage(',')
+iris_data = LOAD 'src/etc/Iris.csv' USING PigStorage(',')
 	AS (Sepal_Length:double, Sepal_Width:double, Petal_Length:double, Petal_Width:double);
 
-DESCRIBE iris_input;
+DESCRIBE iris_data;
 ```
 
 Defining a Java UDF for the PMML file:
 ```
-DEFINE iris_treemodel org.jpmml.piglet.PMMLFunc('src/etc/DecisionTreeIris.pmml');
+DEFINE iris_rf org.jpmml.piglet.PMMLFunc('src/etc/RandomForestIris.pmml');
 ```
 
 Scoring data using the Java UDF:
 ```
-iris_prediction = FOREACH iris_input GENERATE iris_treemodel(*);
+iris_rf_prediction = FOREACH iris_data GENERATE iris_rf(*);
 
-DESCRIBE iris_prediction;
+DESCRIBE iris_rf_prediction;
 
-DUMP iris_prediction;
+DUMP iris_rf_prediction;
 ```
 
 # License #
