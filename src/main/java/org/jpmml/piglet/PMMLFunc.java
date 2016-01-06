@@ -129,7 +129,7 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 
 			org.dmg.pmml.DataType dataType = dataField.getDataType();
 
-			tupleFieldSchemas.add(new Schema.FieldSchema(targetField.getValue(), formatDataType(dataType)));
+			tupleFieldSchemas.add(new Schema.FieldSchema(targetField.getValue(), DataTypeUtil.formatDataType(dataType)));
 		}
 
 		List<FieldName> outputFields = evaluator.getOutputFields();
@@ -146,7 +146,7 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 				}
 			}
 
-			tupleFieldSchemas.add(new Schema.FieldSchema(outputField.getValue(), formatDataType(dataType)));
+			tupleFieldSchemas.add(new Schema.FieldSchema(outputField.getValue(), DataTypeUtil.formatDataType(dataType)));
 		}
 
 		FieldSchema tupleSchema;
@@ -230,9 +230,9 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 
 			FieldSchema fieldSchema = fieldSchemas.get(aliasIndex);
 
-			org.dmg.pmml.DataType fieldDataType = parseDataType(fieldSchema.type);
+			org.dmg.pmml.DataType fieldDataType = DataTypeUtil.parseDataType(fieldSchema.type);
 
-			if(!isCompatible(dataType, fieldDataType)){
+			if(!DataTypeUtil.isCompatible(dataType, fieldDataType)){
 				throw new IllegalArgumentException("Field " + activeField + " does not support " + fieldDataType + " data. Must be " + dataType + " data");
 			}
 
@@ -253,90 +253,6 @@ public class PMMLFunc extends EvalFunc<Tuple> {
 
 		// Distributed cache file
 		return new File(this.pmmlFile.getName());
-	}
-
-	static
-	private byte formatDataType(org.dmg.pmml.DataType dataType){
-
-		switch(dataType){
-			case STRING:
-				return DataType.CHARARRAY;
-			case INTEGER:
-				return DataType.INTEGER;
-			case FLOAT:
-				return DataType.FLOAT;
-			case DOUBLE:
-				return DataType.DOUBLE;
-			case BOOLEAN:
-				return DataType.BOOLEAN;
-			default:
-				throw new IllegalArgumentException();
-		}
-	}
-
-	static
-	private org.dmg.pmml.DataType parseDataType(byte type){
-
-		switch(type){
-			case DataType.CHARARRAY:
-				return org.dmg.pmml.DataType.STRING;
-			case DataType.INTEGER:
-			case DataType.LONG:
-				return org.dmg.pmml.DataType.INTEGER;
-			case DataType.FLOAT:
-				return org.dmg.pmml.DataType.FLOAT;
-			case DataType.DOUBLE:
-				return org.dmg.pmml.DataType.DOUBLE;
-			case DataType.BOOLEAN:
-				return org.dmg.pmml.DataType.BOOLEAN;
-			default:
-				throw new IllegalArgumentException();
-		}
-	}
-
-	static
-	private boolean isCompatible(org.dmg.pmml.DataType expectedDataType, org.dmg.pmml.DataType actualDataType){
-
-		switch(expectedDataType){
-			case STRING:
-				switch(actualDataType){
-					case STRING:
-						return true;
-					default:
-						return false;
-				}
-			case INTEGER:
-				switch(actualDataType){
-					case STRING:
-					case INTEGER:
-					case BOOLEAN:
-						return true;
-					default:
-						return false;
-				}
-			case FLOAT:
-			case DOUBLE:
-				switch(actualDataType){
-					case STRING:
-					case INTEGER:
-					case FLOAT:
-					case DOUBLE:
-					case BOOLEAN:
-						return true;
-					default:
-						return false;
-				}
-			case BOOLEAN:
-				switch(actualDataType){
-					case STRING:
-					case BOOLEAN:
-						return true;
-					default:
-						return false;
-				}
-			default:
-				return false;
-		}
 	}
 
 	private static final TupleFactory tupleFactory = TupleFactory.getInstance();
